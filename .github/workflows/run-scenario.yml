@@ -1,0 +1,96 @@
+name: Run OfficeQA Assessment
+
+on:
+  push:
+    paths:
+      - 'scenario.toml'
+    branches-ignore:
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      num_questions:
+        description: 'Number of questions to evaluate'
+        required: false
+        default: '10'
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  run-assessment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install tomli pyyaml requests
+
+      - name: Generate docker-compose
+        run: python generate_compose.py
+
+      - name: Pull Docker images
+        run: |
+          docker compose pull || echo "Some images may require authentication"
+
+      - name: Create output directory
+        run: |
+          mkdir -p output
+          chmod 777 output
+
+      - name: Login to GHCR (if token available)
+        if: ${{ env.GHCR_TOKEN != '' }}
+        run: |
+          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Run assessment
+        run: |
+          docker compose up --abort-on-container-exit --exit-code-from judge
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+
+      - name: Record provenance
+        run: python record_provenance.py
+
+      - name: Generate submission ID
+        id: submission
+        run: |
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          SUBMITTER="${{ github.repository_owner }}"
+          echo "id=${SUBMITTER}_${TIMESTAMP}" >> $GITHUB_OUTPUT
+
+      - name: Copy results to submissions
+        run: |
+          mkdir -p submissions/${{ steps.submission.outputs.id }}
+          cp scenario.toml submissions/${{ steps.submission.outputs.id }}/
+          cp -r output/* submissions/${{ steps.submission.outputs.id }}/ || true
+          cp provenance.json submissions/${{ steps.submission.outputs.id }}/ || true
+
+      - name: Create results branch and commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          BRANCH="submission/${{ steps.submission.outputs.id }}"
+          git checkout -b $BRANCH
+          git add submissions/
+          git commit -m "Add assessment results: ${{ steps.submission.outputs.id }}"
+          git push origin $BRANCH
+
+      - name: Output PR link
+        run: |
+          echo "::notice::Create PR at: ${{ github.server_url }}/${{ github.repository }}/compare/main...$BRANCH"
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v || true

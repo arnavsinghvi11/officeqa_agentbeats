@@ -1,0 +1,17 @@
+[green_agent]
+agentbeats_id = ""
+image = "ghcr.io/arnavsinghvi11/officeqa-judge:latest"
+env = { LOG_LEVEL = "INFO" }
+
+[[participants]]
+agentbeats_id = ""
+name = "officeqa_agent"
+image = "ghcr.io/arnavsinghvi11/officeqa-agent:latest"
+env = { OPENAI_API_KEY = "${OPENAI_API_KEY}" }
+
+[config]
+dataset_url = "https://raw.githubusercontent.com/databricks/officeqa/main/officeqa.csv"
+corpus_url = "https://github.com/databricks/officeqa/tree/main/treasury_bulletins_parsed"
+num_questions = 10
+difficulty = "all"
+tolerance = 0.0
