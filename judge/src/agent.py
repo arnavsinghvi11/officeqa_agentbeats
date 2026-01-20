@@ -328,20 +328,11 @@ class OfficeQAAgent:
         )
 
     def _build_prompt(self, question: dict) -> str:
-        return f"""You are being evaluated on the OfficeQA benchmark.
+        return f"""You are a helpful agent. Answer the following question about the U.S. Treasury Bulletin documents.
 
-TASK: Answer the following question about U.S. Treasury Bulletin documents.
+{question['question']}
 
-SOURCE DOCUMENTS: {question['source_files']}
-
-QUESTION: {question['question']}
-
-INSTRUCTIONS:
-1. Analyze the question carefully
-2. Use the source documents to find the answer
-3. Provide your final answer in <FINAL_ANSWER></FINAL_ANSWER> tags
-
-Your response:"""
+Provide your final answer in <FINAL_ANSWER></FINAL_ANSWER> tags."""
 
     async def run(
         self,
