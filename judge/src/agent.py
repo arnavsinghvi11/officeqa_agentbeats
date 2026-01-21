@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import io
 import json
@@ -56,129 +57,229 @@ class EvaluationResults(BaseModel):
 
 def normalize_text(text: str) -> str:
     if not text:
-        return ""
-    return text.replace('\u2212', '-').replace('-', '-')
+        raise ValueError("Cannot normalize empty or None text")
+    normalized = text.replace('\u2212', '-')
+    normalized = normalized.replace('−', '-')
+    return normalized
 
 
-def extract_numbers_with_context(text: str) -> list[tuple[float, str]]:
+def extract_numbers_with_context(text: str) -> list[tuple[float, str, bool, bool]]:
     if not text:
-        return []
-    text = normalize_text(text).replace(',', '')
-    numbers = []
-    for match in re.finditer(r'-?\d+\.?\d*%?', text):
-        matched = match.group().rstrip('%')
-        if matched and matched != '-':
-            try:
-                num = float(matched)
-                start = max(0, match.start() - 20)
-                end = min(len(text), match.end() + 20)
-                context = text[start:end].lower()
-                numbers.append((num, context))
-            except ValueError:
-                continue
-    return numbers
+        raise ValueError("Cannot extract numbers from empty text")
+    text = normalize_text(text)
+    text_no_commas = text.replace(',', '')
+    numbers_with_context = []
+    pattern = r'-?\d+\.?\d*%?'
+    for match in re.finditer(pattern, text_no_commas):
+        matched_text = match.group()
+        if not matched_text or matched_text == '-':
+            continue
+        has_percent = matched_text.endswith('%')
+        num_text = matched_text.rstrip('%')
+        is_negative = num_text.startswith('-')
+        try:
+            num = float(num_text)
+        except ValueError as e:
+            raise ValueError(f"Failed to parse number from '{matched_text}': {e}") from e
+        start = max(0, match.start() - 20)
+        end = min(len(text_no_commas), match.end() + 20)
+        context = text_no_commas[start:end].lower()
+        numbers_with_context.append((num, context, has_percent, is_negative))
+    return numbers_with_context
 
 
-def detect_unit(context: str) -> tuple[str | None, float]:
-    ctx = context.lower()
-    if re.search(r'\btrillions?\b', ctx):
+def detect_unit_in_context(context: str) -> tuple[str | None, float]:
+    context_lower = context.lower()
+    if re.search(r'\btrillions?\b', context_lower):
         return ('trillion', 1e12)
-    if re.search(r'\bbillions?\b', ctx):
+    if re.search(r'\bbillions?\b', context_lower) or re.search(r'\bb\b', context_lower):
         return ('billion', 1e9)
-    if re.search(r'\bmillions?\b', ctx):
+    if re.search(r'\bmillions?\b', context_lower) or re.search(r'\bm\b', context_lower):
         return ('million', 1e6)
-    if re.search(r'\bthousands?\b', ctx):
+    if re.search(r'\bthousands?\b', context_lower) or re.search(r'\bk\b', context_lower):
         return ('thousand', 1e3)
     return (None, 1.0)
 
 
+def normalize_number_with_units(number: float, context: str) -> tuple[float, str | None]:
+    try:
+        unit_name, _ = detect_unit_in_context(context)
+        return (number, unit_name)
+    except Exception as e:
+        raise ValueError(f"Failed to normalize number {number} with context '{context}': {e}") from e
+
+
+def is_likely_year(num: float) -> bool:
+    return 1900 <= num <= 2100 and num == int(num)
+
+
 def has_significant_text(text: str) -> tuple[bool, str]:
     if not text:
-        return False, ''
+        return False, ""
     cleaned = normalize_text(text).lower()
     cleaned = re.sub(r'-?\d+\.?\d*%?', '', cleaned)
     cleaned = re.sub(r'[,]', '', cleaned)
-    for unit in ['trillion', 'trillions', 'billion', 'billions', 'million', 'millions',
-                 'thousand', 'thousands', 'hundred', 'hundreds', 'percent', '%']:
+    unit_words = [
+        'trillion', 'trillions', 'billion', 'billions', 'million', 'millions',
+        'thousand', 'thousands', 'hundred', 'hundreds',
+        'percent', 'percentage', '%'
+    ]
+    for unit in unit_words:
         cleaned = re.sub(r'\b' + unit + r'\b', '', cleaned)
     cleaned = re.sub(r'[^\w\s]', ' ', cleaned)
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-    return len(cleaned) >= 2, cleaned
+    has_text = len(cleaned) >= 2
+    return has_text, cleaned
 
 
-def check_text_overlap(gt: str, pred: str) -> bool:
-    gt_has, gt_clean = has_significant_text(gt)
-    pred_has, pred_clean = has_significant_text(pred)
-    if not gt_has:
-        return True
-    if not pred_has:
-        return False
-    return gt_clean in pred_clean or pred_clean in gt_clean
+def check_text_overlap(gt_text: str, pred_text: str) -> tuple[bool, str]:
+    if not gt_text or not pred_text:
+        return False, "Empty text in comparison"
+    gt_has_text, gt_cleaned = has_significant_text(gt_text)
+    pred_has_text, pred_cleaned = has_significant_text(pred_text)
+    if not gt_has_text:
+        return True, "GT is purely numeric, text check not required"
+    if not pred_has_text:
+        return False, f"GT has text '{gt_cleaned}' but prediction is purely numeric"
+    if gt_cleaned in pred_cleaned:
+        return True, f"Text overlap: '{gt_cleaned}' found in prediction"
+    if pred_cleaned in gt_cleaned:
+        return True, f"Text overlap: prediction text '{pred_cleaned}' matches GT"
+    return False, f"Text mismatch: GT='{gt_cleaned}', Pred='{pred_cleaned}'"
 
 
 def extract_final_answer(text: str) -> str:
     if not text:
-        return ""
-    match = re.search(r'<FINAL_ANSWER>\s*(.*?)\s*</FINAL_ANSWER>', text, re.DOTALL)
+        raise ValueError("Cannot extract from empty text")
+    match = re.search(r'<FINAL_ANSWER>\s*(.*?)\s*</FINAL_ANSWER>', text, re.DOTALL | re.IGNORECASE)
     if match:
-        return match.group(1).strip()
+        content = match.group(1).strip()
+        if not content:
+            raise ValueError("FINAL_ANSWER tags are empty")
+        return content
     return text
 
 
-def fuzzy_match_answer(ground_truth: str, predicted: str, tolerance: float = 0.0) -> tuple[bool, str]:
+def fuzzy_match_answer(ground_truth: str, predicted: str, tolerance: float = 0.05) -> tuple[bool, str]:
     if not ground_truth:
-        return False, "Empty ground truth"
+        raise ValueError("Ground truth cannot be empty")
     if not predicted:
-        return False, "Empty prediction"
+        raise ValueError("Predicted answer cannot be empty")
+    if not 0 <= tolerance <= 1:
+        raise ValueError(f"Tolerance must be between 0 and 1, got {tolerance}")
 
-    if 'unable to determine' in predicted.lower():
-        return False, "Answer contains 'Unable to determine'"
+    try:
+        gt_numbers_with_context = extract_numbers_with_context(ground_truth)
+    except Exception as e:
+        raise ValueError(f"Failed to extract numbers: {e}") from e
 
-    predicted = extract_final_answer(predicted)
-    gt_nums = extract_numbers_with_context(ground_truth)
-    pred_nums = extract_numbers_with_context(predicted)
+    try:
+        pred_numbers_with_context = extract_numbers_with_context(predicted)
+    except Exception as e:
+        raise ValueError(f"Failed to extract numbers: {e}") from e
 
-    if gt_nums and pred_nums:
-        if len(gt_nums) > 1:
-            matched = 0
-            for gt_val, _ in gt_nums:
-                for pred_val, _ in pred_nums:
-                    if gt_val == 0 and pred_val == 0:
-                        if check_text_overlap(ground_truth, predicted):
-                            matched += 1
-                            break
-                    elif gt_val != 0:
-                        diff = abs(gt_val - pred_val) / abs(gt_val)
-                        if diff <= tolerance and check_text_overlap(ground_truth, predicted):
-                            matched += 1
-                            break
-            if matched == len(gt_nums):
-                return True, f"All {len(gt_nums)} numbers matched"
-            return False, f"Matched {matched}/{len(gt_nums)} numbers"
+    gt_numbers = [(num, ctx) for num, ctx, _, _ in gt_numbers_with_context]
+    pred_numbers = [(num, ctx) for num, ctx, _, _ in pred_numbers_with_context]
 
-        gt_val, _ = gt_nums[0]
+    if gt_numbers and pred_numbers:
+        if len(gt_numbers) > 1:
+            pred_non_years = [(n, c) for n, c in pred_numbers
+                             if not is_likely_year(n) or any(is_likely_year(g) for g, _ in gt_numbers)]
+            matched_gt = []
+            unmatched_gt = []
+            for gt_val, gt_context in gt_numbers:
+                try:
+                    gt_base, gt_unit = normalize_number_with_units(gt_val, gt_context)
+                except Exception as e:
+                    raise ValueError(f"Failed to normalize GT number {gt_val}: {e}") from e
+                found_match = False
+                for pred_val, pred_context in pred_non_years:
+                    try:
+                        pred_base, pred_unit = normalize_number_with_units(pred_val, pred_context)
+                    except Exception as e:
+                        raise ValueError(f"Failed to normalize prediction number {pred_val}: {e}") from e
+                    if gt_base == 0:
+                        if pred_base == 0:
+                            text_matches, _ = check_text_overlap(ground_truth, predicted)
+                            if text_matches:
+                                found_match = True
+                                break
+                    else:
+                        diff_pct = abs(gt_base - pred_base) / abs(gt_base)
+                        if diff_pct <= tolerance:
+                            text_matches, _ = check_text_overlap(ground_truth, predicted)
+                            if text_matches:
+                                found_match = True
+                                break
+                if found_match:
+                    matched_gt.append(gt_val)
+                else:
+                    unmatched_gt.append(gt_val)
+            if len(matched_gt) == len(gt_numbers):
+                return True, f"List match: All {len(gt_numbers)} numbers found in prediction"
+            else:
+                return False, f"List mismatch: Found {len(matched_gt)}/{len(gt_numbers)} numbers. Missing: {unmatched_gt}"
+        else:
+            gt_val, gt_context = gt_numbers[0]
+            try:
+                gt_base, gt_unit = normalize_number_with_units(gt_val, gt_context)
+            except Exception as e:
+                raise ValueError(f"Failed to normalize GT number: {e}") from e
+            gt_has_text, _ = has_significant_text(ground_truth)
+            should_filter_years = not (is_likely_year(gt_val) or gt_has_text)
+            best_match = None
+            best_diff = float('inf')
+            best_pred_info = None
+            for pred_val, pred_context in pred_numbers:
+                if should_filter_years and is_likely_year(pred_val):
+                    continue
+                try:
+                    pred_base, pred_unit = normalize_number_with_units(pred_val, pred_context)
+                except Exception as e:
+                    raise ValueError(f"Failed to normalize prediction number: {e}") from e
+                if gt_base == 0:
+                    if pred_base == 0:
+                        text_matches, text_rationale = check_text_overlap(ground_truth, predicted)
+                        if text_matches:
+                            return True, f"Exact match: Found 0 in response. {text_rationale}"
+                    continue
+                diff_pct = abs(gt_base - pred_base) / abs(gt_base)
+                if diff_pct < best_diff:
+                    best_diff = diff_pct
+                    best_match = pred_base
+                    best_pred_info = (pred_base, pred_unit)
+                if diff_pct <= tolerance:
+                    text_matches, text_rationale = check_text_overlap(ground_truth, predicted)
+                    if not text_matches:
+                        continue
+                    return True, f"Numerical match: GT={gt_base} ({gt_unit or 'no unit'}), Pred={pred_base} ({pred_unit or 'no unit'}), Diff={diff_pct*100:.2f}%. {text_rationale}"
+            if best_match is not None and best_pred_info is not None:
+                return False, f"No match: GT={gt_base} ({gt_unit or 'no unit'}), Closest={best_pred_info[0]} ({best_pred_info[1] or 'no unit'}), Diff={best_diff*100:.2f}%"
+            else:
+                return False, f"No valid numbers found in prediction (filtered out years: {[n for n, _ in pred_numbers[:5]]})"
 
-        for pred_val, _ in pred_nums:
-            if gt_val == 0 and pred_val == 0:
-                if check_text_overlap(ground_truth, predicted):
-                    return True, "Exact zero match"
-            elif gt_val != 0:
-                diff = abs(gt_val - pred_val) / abs(gt_val)
-                if diff <= tolerance:
-                    if check_text_overlap(ground_truth, predicted):
-                        return True, f"Match within {diff*100:.2f}% tolerance"
-
-        return False, f"No matching number found for {gt_val}"
-
-    gt_clean = ground_truth.strip().lower().strip('"\'')
-    pred_clean = predicted.strip().lower().strip('"\'')
+    gt_clean = ground_truth.strip().lower().strip('"').strip("'")
+    pred_clean = predicted.strip().lower().strip('"').strip("'")
     gt_clean = re.sub(r'\([^)]*\)', '', gt_clean).strip()
     pred_clean = re.sub(r'\([^)]*\)', '', pred_clean).strip()
 
-    if gt_clean in pred_clean or gt_clean == pred_clean:
-        return True, "Text match"
+    if gt_clean in pred_clean:
+        return True, f"Text match: '{ground_truth}' found in prediction"
+    if gt_clean == pred_clean:
+        return True, "Exact text match"
 
-    return False, f"No match: GT='{ground_truth[:50]}', Pred='{predicted[:50]}'"
+    return False, f"No match found. GT: '{ground_truth[:100]}', Pred: '{predicted[:100]}'"
+
+
+def score_answer(ground_truth: str, predicted: str, tolerance: float = 0.00) -> tuple[bool, str]:
+    try:
+        predicted_answer = extract_final_answer(predicted)
+    except ValueError:
+        return False, "Failed to extract final answer"
+    try:
+        return fuzzy_match_answer(ground_truth, predicted_answer, tolerance)
+    except ValueError as e:
+        return False, str(e)
 
 
 @dataclass
@@ -257,6 +358,36 @@ class OfficeQAAgent:
             )
         )
 
+    async def _evaluate_single_question(
+        self,
+        q: dict,
+        agent_url: str,
+        tolerance: float,
+    ) -> QuestionResult:
+        prompt = self._build_prompt(q)
+        try:
+            response = await self.messenger.talk_to_agent(
+                message=prompt,
+                url=agent_url,
+                new_conversation=True,
+                timeout=120,
+            )
+        except Exception as e:
+            logger.error(f"Failed to get response for {q['uid']}: {e}")
+            response = f"Error: {e}"
+
+        is_correct, rationale = score_answer(q["answer"], response, tolerance)
+
+        return QuestionResult(
+            uid=q["uid"],
+            question=q["question"],
+            ground_truth=q["answer"],
+            predicted=response if response else "",
+            is_correct=is_correct,
+            rationale=rationale,
+            difficulty=q["difficulty"],
+        )
+
     async def evaluate_agent(
         self,
         agent_url: str,
@@ -265,66 +396,49 @@ class OfficeQAAgent:
         event_queue: EventQueue,
         task_id: str,
         context_id: str,
+        max_concurrent: int = 10,
     ) -> EvaluationResults:
-        results = []
-        correct = 0
-        easy_correct = 0
-        easy_total = 0
-        hard_correct = 0
-        hard_total = 0
+        await self._emit_status(
+            event_queue, task_id, context_id, TaskState.working,
+            f"Evaluating {len(questions)} questions in parallel (max {max_concurrent} concurrent)..."
+        )
 
-        for i, q in enumerate(questions):
-            await self._emit_status(
-                event_queue, task_id, context_id, TaskState.working,
-                f"Evaluating question {i+1}/{len(questions)}: {q['uid']}"
-            )
+        semaphore = asyncio.Semaphore(max_concurrent)
+        completed = 0
+        total = len(questions)
+        results_list: list[QuestionResult] = []
+        lock = asyncio.Lock()
 
-            prompt = self._build_prompt(q)
+        async def bounded_evaluate(q: dict) -> QuestionResult:
+            nonlocal completed
+            async with semaphore:
+                result = await self._evaluate_single_question(q, agent_url, tolerance)
+                async with lock:
+                    completed += 1
+                    results_list.append(result)
+                    if completed % 10 == 0 or completed == total:
+                        await self._emit_status(
+                            event_queue, task_id, context_id, TaskState.working,
+                            f"Progress: {completed}/{total} questions completed ({completed*100//total}%)"
+                        )
+                return result
 
-            try:
-                response = await self.messenger.talk_to_agent(
-                    message=prompt,
-                    url=agent_url,
-                    new_conversation=True,
-                    timeout=120,
-                )
-            except Exception as e:
-                logger.error(f"Failed to get response for {q['uid']}: {e}")
-                response = f"Error: {e}"
+        tasks = [bounded_evaluate(q) for q in questions]
+        await asyncio.gather(*tasks)
 
-            is_correct, rationale = fuzzy_match_answer(
-                q["answer"], response, tolerance
-            )
-
-            if is_correct:
-                correct += 1
-
-            if q["difficulty"] == "easy":
-                easy_total += 1
-                if is_correct:
-                    easy_correct += 1
-            elif q["difficulty"] == "hard":
-                hard_total += 1
-                if is_correct:
-                    hard_correct += 1
-
-            results.append(QuestionResult(
-                uid=q["uid"],
-                question=q["question"],
-                ground_truth=q["answer"],
-                predicted=response[:500] if response else "",
-                is_correct=is_correct,
-                rationale=rationale,
-                difficulty=q["difficulty"],
-            ))
+        correct = sum(1 for r in results_list if r.is_correct)
+        easy_results = [r for r in results_list if r.difficulty == "easy"]
+        hard_results = [r for r in results_list if r.difficulty == "hard"]
+        easy_correct = sum(1 for r in easy_results if r.is_correct)
+        hard_correct = sum(1 for r in hard_results if r.is_correct)
 
         return EvaluationResults(
             total_questions=len(questions),
             correct_answers=correct,
             accuracy=correct / len(questions) if questions else 0,
-            easy_accuracy=easy_correct / easy_total if easy_total > 0 else None,
-            hard_accuracy=hard_correct / hard_total if hard_total > 0 else None,
-            results=results,
+            easy_accuracy=easy_correct / len(easy_results) if easy_results else None,
+            hard_accuracy=hard_correct / len(hard_results) if hard_results else None,
+            results=results_list,
         )
 
     def _build_prompt(self, question: dict) -> str:
@@ -332,7 +446,10 @@ class OfficeQAAgent:
 
 {question['question']}
 
-Provide your final answer in <FINAL_ANSWER></FINAL_ANSWER> tags."""
+Provide your final answer in the following format:
+<FINAL_ANSWER>
+[value]
+</FINAL_ANSWER>"""
 
     async def run(
         self,

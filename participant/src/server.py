@@ -5,7 +5,7 @@ import uvicorn
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
-from a2a.types import AgentCard, AgentSkill
+from a2a.types import AgentCapabilities, AgentCard, AgentSkill
 
 from executor import Executor
 
@@ -41,12 +41,12 @@ def main():
             "Baseline purple agent for the OfficeQA benchmark. "
             "Demonstrates document understanding and reasoning capabilities."
         ),
-        url=args.card_url or f"http://{args.host}:{args.port}",
+        url=args.card_url or f"http://{args.host}:{args.port}/",
         version="1.0.0",
         skills=[skill],
-        defaultInputModes=["text"],
-        defaultOutputModes=["text"],
-        capabilities={"streaming": True},
+        default_input_modes=["text"],
+        default_output_modes=["text"],
+        capabilities=AgentCapabilities(streaming=True),
     )
 
     task_store = InMemoryTaskStore()
