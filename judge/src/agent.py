@@ -442,14 +442,7 @@ class OfficeQAAgent:
         )
 
     def _build_prompt(self, question: dict) -> str:
-        return f"""You are a helpful agent. Answer the following question about the U.S. Treasury Bulletin documents.
-
-{question['question']}
-
-Provide your final answer in the following format:
-<FINAL_ANSWER>
-[value]
-</FINAL_ANSWER>"""
+        return question['question']
 
     async def run(
         self,

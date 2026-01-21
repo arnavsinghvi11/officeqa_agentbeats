@@ -36,19 +36,33 @@ except ImportError:
     GOOGLE_AVAILABLE = False
 
 
+SYSTEM_PROMPT = """You are a helpful agent that answers questions about the U.S. Treasury Bulletin documents. Ensure numerical accuracy and full precision in calculations while answering the question.
+
+Provide your final answer in the following format:
+<REASONING>
+[steps, calculations and references used]
+</REASONING>
+<FINAL_ANSWER>
+[value]
+</FINAL_ANSWER>"""
+
+
 def get_llm_response(prompt: str) -> str:
     if OPENAI_AVAILABLE and os.environ.get("OPENAI_API_KEY"):
         client = OpenAI()
         response = client.chat.completions.create(
-            model=os.environ.get("OPENAI_MODEL", "gpt-4o"),
-            messages=[{"role": "user", "content": prompt}],
+            model=os.environ["OPENAI_MODEL"],
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
             temperature=0,
         )
         return response.choices[0].message.content or ""
 
     if GOOGLE_AVAILABLE and os.environ.get("GOOGLE_API_KEY"):
         genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
-        model = genai.GenerativeModel(os.environ.get("GOOGLE_MODEL", "gemini-2.5-flash-preview-05-20"))
+        model = genai.GenerativeModel(os.environ["GOOGLE_MODEL"])
         response = model.generate_content(prompt)
         return response.text or ""
 
