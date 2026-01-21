@@ -6,7 +6,7 @@ from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
 from a2a.types import DataPart, Message, Part, Role, TextPart
 
 
-DEFAULT_TIMEOUT = 300
+DEFAULT_TIMEOUT = 600
 
 
 def create_message(*, role: Role = Role.user, text: str, context_id: str | None = None) -> Message:
@@ -37,7 +37,8 @@ async def send_message(
     streaming: bool = False,
     timeout: int = DEFAULT_TIMEOUT,
 ):
-    async with httpx.AsyncClient(timeout=timeout) as httpx_client:
+    timeout_config = httpx.Timeout(timeout=None, read=None, write=None, connect=60.0, pool=None)
+    async with httpx.AsyncClient(timeout=timeout_config) as httpx_client:
         resolver = A2ACardResolver(httpx_client=httpx_client, base_url=base_url)
         agent_card = await resolver.get_agent_card()
         config = ClientConfig(httpx_client=httpx_client, streaming=streaming)

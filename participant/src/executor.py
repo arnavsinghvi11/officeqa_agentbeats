@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from uuid import uuid4
@@ -36,29 +37,48 @@ except ImportError:
     GOOGLE_AVAILABLE = False
 
 
-SYSTEM_PROMPT = """You are a helpful agent that answers questions about the U.S. Treasury Bulletin documents. Ensure numerical accuracy and full precision in calculations while answering the question.
+SYSTEM_PROMPT = """You are a helpful agent that answers questions about the U.S. Treasury Bulletin. Ensure numerical accuracy and full precision in calculations while answering the question.
 
-Provide your final answer in the following format:
+Provide your final answer in the following required format:
 <REASONING>
-[steps, calculations and references used]
+[steps and calculations]
 </REASONING>
 <FINAL_ANSWER>
 [value]
-</FINAL_ANSWER>"""
+</FINAL_ANSWER>
+
+FAILURE CONDITION: If you do not produce a <FINAL_ANSWER> tag with the canonical final answer enclosed in the <FINAL_ANSWER> tag, your response will be considered incorrect.
+"""
+
 
 
 def get_llm_response(prompt: str) -> str:
     if OPENAI_AVAILABLE and os.environ.get("OPENAI_API_KEY"):
         client = OpenAI()
-        response = client.chat.completions.create(
-            model=os.environ["OPENAI_MODEL"],
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0,
-        )
-        return response.choices[0].message.content or ""
+        model = os.environ["OPENAI_MODEL"]
+
+        if model.startswith("gpt-5"):
+            reasoning_effort = os.environ.get("REASONING_EFFORT", "high")
+            enable_web_search = os.environ.get("ENABLE_WEB_SEARCH", "false").lower() == "true"
+            tools = [{"type": "web_search"}] if enable_web_search else None
+            response = client.responses.create(
+                model=model,
+                instructions=SYSTEM_PROMPT,
+                input=[{"role": "user", "content": prompt}],
+                reasoning={"effort": reasoning_effort},
+                tools=tools,
+            )
+            return response.output_text or ""
+        else:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0,
+            )
+            return response.choices[0].message.content or ""
 
     if GOOGLE_AVAILABLE and os.environ.get("GOOGLE_API_KEY"):
         genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
@@ -115,7 +135,7 @@ class Executor(AgentExecutor):
                 break
 
         try:
-            response = get_llm_response(question_text)
+            response = await asyncio.to_thread(get_llm_response, question_text)
         except Exception as e:
             logger.exception(f"LLM call failed: {e}")
             response = f"<FINAL_ANSWER>Error: {e}</FINAL_ANSWER>"
