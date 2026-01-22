@@ -56,6 +56,8 @@ class EvaluationResults(BaseModel):
     results: list[QuestionResult]
 
 
+#Reward reference - https://github.com/databricks/officeqa/blob/main/reward.py
+
 def normalize_text(text: str) -> str:
     if not text:
         raise ValueError("Cannot normalize empty or None text")
@@ -151,12 +153,16 @@ def check_text_overlap(gt_text: str, pred_text: str) -> tuple[bool, str]:
 
 def extract_final_answer(text: str) -> str:
     if not text:
-        return ""
+        raise ValueError("Cannot extract from empty text")
     match = re.search(r'<FINAL_ANSWER>\s*(.*?)\s*</FINAL_ANSWER>', text, re.DOTALL | re.IGNORECASE)
-    if match:
-        content = match.group(1).strip()
-        return content if content else ""
-    return ""
+    if not match:
+        raise ValueError("No FINAL_ANSWER tags found")
+    content = match.group(1).strip()
+    if not content:
+        raise ValueError("FINAL_ANSWER tags are empty")
+    if len(content) > 500:
+        raise ValueError(f"FINAL_ANSWER too long ({len(content)} chars)")
+    return content
 
 
 def extract_reasoning(text: str) -> str:
@@ -227,7 +233,7 @@ def fuzzy_match_answer(ground_truth: str, predicted: str, tolerance: float = 0.0
             if len(matched_gt) == len(gt_numbers):
                 return True, f"List match: All {len(gt_numbers)} numbers found in prediction"
             else:
-                return False, "No match"
+                return False, f"List mismatch: Found {len(matched_gt)}/{len(gt_numbers)} numbers. Missing: {unmatched_gt}"
         else:
             gt_val, gt_context = gt_numbers[0]
             try:
@@ -236,6 +242,9 @@ def fuzzy_match_answer(ground_truth: str, predicted: str, tolerance: float = 0.0
                 raise ValueError(f"Failed to normalize GT number: {e}") from e
             gt_has_text, _ = has_significant_text(ground_truth)
             should_filter_years = not (is_likely_year(gt_val) or gt_has_text)
+            best_match = None
+            best_diff = float('inf')
+            best_pred_info = None
             for pred_val, pred_context in pred_numbers:
                 if should_filter_years and is_likely_year(pred_val):
                     continue
@@ -250,12 +259,19 @@ def fuzzy_match_answer(ground_truth: str, predicted: str, tolerance: float = 0.0
                             return True, f"Exact match: Found 0 in response. {text_rationale}"
                     continue
                 diff_pct = abs(gt_base - pred_base) / abs(gt_base)
+                if diff_pct < best_diff:
+                    best_diff = diff_pct
+                    best_match = pred_base
+                    best_pred_info = (pred_base, pred_unit)
                 if diff_pct <= tolerance:
                     text_matches, text_rationale = check_text_overlap(ground_truth, predicted)
                     if not text_matches:
                         continue
                     return True, f"Numerical match: GT={gt_base} ({gt_unit or 'no unit'}), Pred={pred_base} ({pred_unit or 'no unit'}), Diff={diff_pct*100:.2f}%. {text_rationale}"
-            return False, "No match"
+            if best_match is not None:
+                return False, f"No match: GT={gt_base} ({gt_unit or 'no unit'}), Closest={best_pred_info[0]} ({best_pred_info[1] or 'no unit'}), Diff={best_diff*100:.2f}%"
+            else:
+                return False, f"No valid numbers found in prediction (filtered out years: {[n for n, _ in pred_numbers[:5]]})"
 
     gt_clean = ground_truth.strip().lower().strip('"').strip("'")
     pred_clean = predicted.strip().lower().strip('"').strip("'")
@@ -267,17 +283,22 @@ def fuzzy_match_answer(ground_truth: str, predicted: str, tolerance: float = 0.0
     if gt_clean == pred_clean:
         return True, "Exact text match"
 
-    return False, "No match"
+    return False, f"No match found. GT: '{ground_truth[:100]}', Pred: '{predicted[:100]}'"
 
 
 def score_answer(ground_truth: str, predicted: str, tolerance: float = 0.00) -> tuple[bool, str]:
-    predicted_answer = extract_final_answer(predicted)
-    if not predicted_answer:
-        return False, "No match"
+    try:
+        predicted_answer = extract_final_answer(predicted)
+    except ValueError as e:
+        return False, str(e)
+
+    if predicted_answer.strip().lower() == "no answer found":
+        return False, "Agent reported: no answer found"
+
     try:
         return fuzzy_match_answer(ground_truth, predicted_answer, tolerance)
-    except ValueError:
-        return False, "No match"
+    except ValueError as e:
+        return False, str(e)
 
 
 @dataclass
@@ -374,16 +395,14 @@ class OfficeQAAgent:
             logger.error(f"Failed to get response for {q['uid']}: {e}")
             response = f"Error: {e}"
 
-        predicted_answer = extract_final_answer(response)
         reasoning_trace = extract_reasoning(response)
-        
         is_correct, rationale = score_answer(q["answer"], response, tolerance)
 
         return QuestionResult(
             uid=q["uid"],
             question=q["question"],
             ground_truth=q["answer"],
-            predicted=predicted_answer,
+            predicted=response if response else "",
             is_correct=is_correct,
             rationale=rationale,
             difficulty=q["difficulty"],

@@ -31,12 +31,6 @@ except ImportError:
     OPENAI_AVAILABLE = False
 
 try:
-    import google.generativeai as genai
-    GOOGLE_AVAILABLE = True
-except ImportError:
-    GOOGLE_AVAILABLE = False
-
-try:
     import anthropic
     ANTHROPIC_AVAILABLE = True
 except ImportError:
@@ -53,7 +47,8 @@ Provide your final answer in the following required format:
 [value]
 </FINAL_ANSWER>
 
-FAILURE CONDITION: If you do not produce a <FINAL_ANSWER> tag with the canonical final answer enclosed in the <FINAL_ANSWER> tag, your response will be considered incorrect.
+If you do not produce a <FINAL_ANSWER> tag with the canonical final answer enclosed, your response will be considered incorrect.
+
 """
 
 
@@ -86,25 +81,21 @@ def get_llm_response(prompt: str) -> str:
             )
             return response.choices[0].message.content or ""
 
-    if GOOGLE_AVAILABLE and os.environ.get("GOOGLE_API_KEY"):
-        genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
-        model = genai.GenerativeModel(os.environ["GOOGLE_MODEL"])
-        response = model.generate_content(prompt)
-        return response.text or ""
-
     if ANTHROPIC_AVAILABLE and os.environ.get("ANTHROPIC_API_KEY"):
         client = anthropic.Anthropic()
         model = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-5-20251101")
         max_tokens = int(os.environ.get("ANTHROPIC_MAX_TOKENS", "16000"))
         enable_web_search = os.environ.get("ENABLE_WEB_SEARCH", "false").lower() == "true"
-        tools = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 10}] if enable_web_search else None
-        response = client.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}],
-            tools=tools,
-        )
+        kwargs = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "system": SYSTEM_PROMPT,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0,
+        }
+        if enable_web_search:
+            kwargs["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 10}]
+        response = client.messages.create(**kwargs)
         text_parts = [block.text for block in response.content if hasattr(block, 'text')]
         return "\n".join(text_parts) if text_parts else ""
 

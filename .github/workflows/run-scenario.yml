@@ -58,7 +58,7 @@ jobs:
           docker compose up --abort-on-container-exit --exit-code-from judge
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
       - name: Record provenance
         run: python record_provenance.py

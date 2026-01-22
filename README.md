@@ -15,9 +15,9 @@ This submission ports the OfficeQA benchmark to the AgentBeats platform, providi
 
 | Metric | Value |
 |--------|-------|
-| Total Questions | 168-246 |
+| Total Questions | 246 |
 | Document Source | U.S. Treasury Bulletins |
-| Time Span | 1939-2025 |
+| Time Span | January 1939 - September 2025 |
 | Difficulty Levels | Easy, Hard |
 | Question Types | Extraction, Calculation, Statistical Analysis |
 
@@ -39,8 +39,8 @@ This submission ports the OfficeQA benchmark to the AgentBeats platform, providi
 
 1. Clone and setup:
 ```bash
-git clone <this-repo>
-cd officeqa_agent
+git clone https://github.com/arnavsinghvi11/officeqa_agentbeats.git
+cd officeqa_agentbeats
 cp sample.env .env
 ```
 
@@ -136,20 +136,16 @@ tolerance = 0.0         # Numerical tolerance (0.0 = exact, 0.05 = 5%)
 
 The baseline purple agent supports:
 - **OpenAI**: Set `OPENAI_API_KEY` and optionally `OPENAI_MODEL`
-- **Google Gemini**: Set `GOOGLE_API_KEY` and optionally `GOOGLE_MODEL`
+- **Anthropic Claude**: Set `ANTHROPIC_API_KEY` and optionally `ANTHROPIC_MODEL`
 
 ## Dataset Access
 
-The OfficeQA dataset is publicly available:
+The [OfficeQA Dataset](https://github.com/databricks/officeqa) is publicly available:
 - **Questions**: https://github.com/databricks/officeqa/blob/main/officeqa.csv
 - **Source Documents**: https://github.com/databricks/officeqa/tree/main/treasury_bulletins_parsed
-- **Original PDFs**: https://github.com/databricks/officeqa/tree/main/treasury_bulletin_pdfs (~20GB)
+- **Original PDFs**: https://github.com/databricks/officeqa/tree/main/treasury_bulletin_pdfs
 
 ## License
 
 - **Code**: Apache 2.0
 - **Dataset**: CC-BY-SA 4.0
-
-## References
-
-- [OfficeQA Dataset](https://github.com/databricks/officeqa)
