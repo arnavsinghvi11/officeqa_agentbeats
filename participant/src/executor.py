@@ -36,6 +36,12 @@ try:
 except ImportError:
     GOOGLE_AVAILABLE = False
 
+try:
+    import anthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+
 
 SYSTEM_PROMPT = """You are a helpful agent that answers questions about the U.S. Treasury Bulletin. Ensure numerical accuracy and full precision in calculations while answering the question.
 
@@ -85,6 +91,22 @@ def get_llm_response(prompt: str) -> str:
         model = genai.GenerativeModel(os.environ["GOOGLE_MODEL"])
         response = model.generate_content(prompt)
         return response.text or ""
+
+    if ANTHROPIC_AVAILABLE and os.environ.get("ANTHROPIC_API_KEY"):
+        client = anthropic.Anthropic()
+        model = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-5-20251101")
+        max_tokens = int(os.environ.get("ANTHROPIC_MAX_TOKENS", "16000"))
+        enable_web_search = os.environ.get("ENABLE_WEB_SEARCH", "false").lower() == "true"
+        tools = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 10}] if enable_web_search else None
+        response = client.messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": prompt}],
+            tools=tools,
+        )
+        text_parts = [block.text for block in response.content if hasattr(block, 'text')]
+        return "\n".join(text_parts) if text_parts else ""
 
     return "<FINAL_ANSWER>Unable to determine - no LLM configured</FINAL_ANSWER>"
 
