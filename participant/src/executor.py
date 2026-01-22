@@ -59,16 +59,20 @@ def get_llm_response(prompt: str) -> str:
         model = os.environ["OPENAI_MODEL"]
 
         if model.startswith("gpt-5"):
-            reasoning_effort = os.environ.get("REASONING_EFFORT", "high")
+            reasoning_effort = os.environ.get("REASONING_EFFORT", "")
             enable_web_search = os.environ.get("ENABLE_WEB_SEARCH", "false").lower() == "true"
             tools = [{"type": "web_search"}] if enable_web_search else None
-            response = client.responses.create(
-                model=model,
-                instructions=SYSTEM_PROMPT,
-                input=[{"role": "user", "content": prompt}],
-                reasoning={"effort": reasoning_effort},
-                tools=tools,
-            )
+            kwargs = {
+                "model": model,
+                "instructions": SYSTEM_PROMPT,
+                "input": [{"role": "user", "content": prompt}],
+                "tools": tools,
+            }
+            if reasoning_effort:
+                kwargs["reasoning"] = {"effort": reasoning_effort}
+            else:
+                kwargs["temperature"] = 0
+            response = client.responses.create(**kwargs)
             return response.output_text or ""
         else:
             response = client.chat.completions.create(
