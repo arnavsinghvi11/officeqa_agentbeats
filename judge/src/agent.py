@@ -192,7 +192,7 @@ def contains_multiple_candidates(ground_truth: str, predicted: str) -> tuple[boo
             if not is_likely_year(pred_val):
                 candidates.add(round(pred_val, 2))
 
-    if len(candidates) > 2:
+    if len(candidates) > 1:
         return True, f"Hedged answer: GT expects 1 value but prediction contains {len(candidates)} candidates {list(candidates)[:5]}"
 
     return False, ""
