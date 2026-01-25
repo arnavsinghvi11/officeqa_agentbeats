@@ -165,6 +165,39 @@ def extract_final_answer(text: str) -> str:
     return content
 
 
+def contains_multiple_candidates(ground_truth: str, predicted: str) -> tuple[bool, str]:
+    """
+    Check if prediction hedges by containing multiple candidate answers
+    when ground truth expects a single value.
+    Returns (is_hedged, reason).
+    """
+    try:
+        gt_numbers = extract_numbers_with_context(ground_truth)
+        pred_numbers = extract_numbers_with_context(predicted)
+    except ValueError:
+        return False, ""
+
+    if len(gt_numbers) != 1:
+        return False, ""
+
+    gt_val, gt_ctx, _, _ = gt_numbers[0]
+    gt_is_year = is_likely_year(gt_val)
+
+    candidates = set()
+    for pred_val, pred_ctx, _, _ in pred_numbers:
+        if gt_is_year:
+            if is_likely_year(pred_val):
+                candidates.add(int(pred_val))
+        else:
+            if not is_likely_year(pred_val):
+                candidates.add(round(pred_val, 2))
+
+    if len(candidates) > 2:
+        return True, f"Hedged answer: GT expects 1 value but prediction contains {len(candidates)} candidates {list(candidates)[:5]}"
+
+    return False, ""
+
+
 def extract_reasoning(text: str) -> str:
     if not text:
         return ""
@@ -182,6 +215,10 @@ def fuzzy_match_answer(ground_truth: str, predicted: str, tolerance: float = 0.0
         raise ValueError("Predicted answer cannot be empty")
     if not 0 <= tolerance <= 1:
         raise ValueError(f"Tolerance must be between 0 and 1, got {tolerance}")
+
+    is_hedged, hedge_reason = contains_multiple_candidates(ground_truth, predicted)
+    if is_hedged:
+        return False, hedge_reason
 
     try:
         gt_numbers_with_context = extract_numbers_with_context(ground_truth)
