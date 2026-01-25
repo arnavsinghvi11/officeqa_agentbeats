@@ -1,0 +1,23 @@
+networks:
+  agentnet:
+    driver: bridge
+services:
+  judge:
+    depends_on:
+    - participant
+    environment:
+      LOG_LEVEL: INFO
+    image: ghcr.io/arnavsinghvi11/officeqa-judge:latest
+    networks:
+    - agentnet
+    ports:
+    - 9009:9009
+  officeqa_agent:
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    image: ghcr.io/arnavsinghvi11/officeqa-agent:latest
+    networks:
+    - agentnet
+    ports:
+    - 9019:9019
+version: '3.8'

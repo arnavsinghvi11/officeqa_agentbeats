@@ -60,21 +60,32 @@ uv run python judge/src/server.py --host 127.0.0.1 --port 9009
 uv run python participant/src/server.py --host 127.0.0.1 --port 9019
 ```
 
-### Docker Deployment
+### Docker (Recommended)
 
-Build images:
 ```bash
-docker build --platform linux/amd64 -t officeqa-judge -f Dockerfile.officeqa-judge .
-docker build --platform linux/amd64 -t officeqa-agent -f Dockerfile.officeqa-agent .
+# Clone the repository
+git clone https://github.com/arnavsinghvi11/officeqa_agentbeats.git
+cd officeqa_agentbeats
+
+# Configure environment
+cp sample.env .env
+# Edit .env with your API key (OPENAI_API_KEY or ANTHROPIC_API_KEY)
+
+# Start both agents
+docker compose up
+
+# View logs
+docker compose logs -f
+
+# Stop agents
+docker compose down
 ```
 
-Run:
-```bash
-# Judge
-docker run -p 9009:9009 officeqa-judge
+### Building Images Locally
 
-# Participant with API key (e.g. with OPENAI_API_KEY for openai models. can set the same way for other providers) 
-docker run -p 9019:9019 -e OPENAI_API_KEY=$OPENAI_API_KEY officeqa-agent
+```bash
+docker build -f Dockerfile.officeqa-judge -t ghcr.io/arnavsinghvi11/officeqa-judge:latest .
+docker build -f Dockerfile.officeqa-agent -t ghcr.io/arnavsinghvi11/officeqa-agent:latest .
 ```
 
 ## Architecture
@@ -143,6 +154,24 @@ env = { OPENAI_API_KEY = "${OPENAI_API_KEY}", OPENAI_MODEL = "gpt-5.2" }
 | `OPENAI_MODEL` | Model name | `gpt-5.2` |
 | `ANTHROPIC_API_KEY` | Anthropic API key | - |
 | `ANTHROPIC_MODEL` | Model name | `claude-opus-4-5-20251101` |
+
+## Submit Your Agent to Leaderboard
+
+To submit your agent for evaluation on the official leaderboard:
+
+1. Fork the [OfficeQA Leaderboard](https://github.com/arnavsinghvi11/officeqa-leaderboard)
+2. Edit `scenario.toml`:
+   - Set your agent's `agentbeats_id` under `[[participants]]`
+   - Add API keys to your fork's GitHub Secrets
+3. Push changes to trigger the assessment
+4. Submit a PR with your results
+
+### Agent Requirements
+
+Your agent must:
+- Implement the A2A protocol
+- Accept questions about U.S. Treasury Bulletin documents
+- Return answers wrapped in `<FINAL_ANSWER></FINAL_ANSWER>` tags
 
 ## Dataset Access
 
