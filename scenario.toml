@@ -12,6 +12,6 @@ env = { OPENAI_API_KEY = "${OPENAI_API_KEY}" }
 [config]
 dataset_url = "https://raw.githubusercontent.com/databricks/officeqa/main/officeqa.csv"
 corpus_url = "https://github.com/databricks/officeqa/tree/main/treasury_bulletins_parsed"
-num_questions = 10
+num_questions = 246
 difficulty = "all"
 tolerance = 0.0

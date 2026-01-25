@@ -325,7 +325,7 @@ class OfficeQAAgent:
 
     async def load_dataset(self, config: dict) -> list[dict]:
         url = config.get("dataset_url", DATASET_URL)
-        num_questions = config.get("num_questions", 10)
+        num_questions = config.get("num_questions", 246)
         difficulty = config.get("difficulty", "all")
 
         async with httpx.AsyncClient(timeout=60) as client:

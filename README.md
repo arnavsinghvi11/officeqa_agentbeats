@@ -1,13 +1,10 @@
-# OfficeQA AgentBeats Benchmark
+# OfficeQA Benchmark AgentBeats Implementation
 
-A green agent implementation for the [AgentBeats Competition](https://rdi.berkeley.edu/agentx-agentbeats.html) (Phase 1 - Green) that evaluates document understanding and reasoning capabilities using the OfficeQA benchmark.
-
-## Overview
 
 **OfficeQA** is a grounded reasoning benchmark that tests AI systems on complex questions requiring extraction and computation from real-world financial documents (U.S. Treasury Bulletins from 1939-2025).
 
-This submission ports the OfficeQA benchmark to the AgentBeats platform, providing:
-- A **Green Agent (Judge)** that orchestrates evaluations
+This submission implements the OfficeQA benchmark on the AgentBeats platform, providing:
+- A **Green Agent (Evaluator)** that orchestrates evaluations
 - A **Baseline Purple Agent** for demonstration
 - Automated scoring using fuzzy matching with configurable tolerance
 
@@ -16,7 +13,7 @@ This submission ports the OfficeQA benchmark to the AgentBeats platform, providi
 | Metric | Value |
 |--------|-------|
 | Total Questions | 246 |
-| Document Source | U.S. Treasury Bulletins |
+| Corpus | U.S. Treasury Bulletins |
 | Time Span | January 1939 - September 2025 |
 | Difficulty Levels | Easy, Hard |
 | Question Types | Extraction, Calculation, Statistical Analysis |
@@ -76,7 +73,7 @@ Run:
 # Judge
 docker run -p 9009:9009 officeqa-judge
 
-# Participant (with API key)
+# Participant with API key (e.g. with OPENAI_API_KEY for openai models. can set the same way for other providers) 
 docker run -p 9019:9019 -e OPENAI_API_KEY=$OPENAI_API_KEY officeqa-agent
 ```
 
@@ -111,7 +108,8 @@ docker run -p 9019:9019 -e OPENAI_API_KEY=$OPENAI_API_KEY officeqa-agent
 
 1. Judge loads questions from OfficeQA dataset
 2. For each question:
-   - Send question with source document references to purple agent
+   - Send question to purple agent, which is instructed to answer the question while 
+   returning its response with `<REASONING>` and `<FINAL_ANSWER>` tags for observability on its solution. 
    - Receive answer (expecting `<FINAL_ANSWER>` tags)
    - Score using fuzzy matching against ground truth
 3. Report aggregate results as artifacts
@@ -123,20 +121,28 @@ docker run -p 9019:9019 -e OPENAI_API_KEY=$OPENAI_API_KEY officeqa-agent
 
 ## Configuration
 
-Edit `scenario.toml` to customize:
+Edit `scenario.toml` to customize benchmark and agent settings:
 
 ```toml
 [config]
-num_questions = 10      # Number of questions to evaluate
-difficulty = "all"      # "easy", "hard", or "all"
-tolerance = 0.0         # Numerical tolerance (0.0 = exact, 0.05 = 5%)
+num_questions = 246      # Number of questions to evaluate
+difficulty = "all"       # "easy", "hard", or "all"
+tolerance = 0.0          # Numerical tolerance (0.0 = exact, 0.05 = 5%)
+
+[[participants]]
+name = "officeqa_agent"
+image = "ghcr.io/arnavsinghvi11/officeqa-agent:latest"
+env = { OPENAI_API_KEY = "${OPENAI_API_KEY}", OPENAI_MODEL = "gpt-5.2" }
 ```
 
-## API Keys
+### Supported Agent Environment Variables
 
-The baseline purple agent supports:
-- **OpenAI**: Set `OPENAI_API_KEY` and optionally `OPENAI_MODEL`
-- **Anthropic Claude**: Set `ANTHROPIC_API_KEY` and optionally `ANTHROPIC_MODEL`
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OPENAI_API_KEY` | OpenAI API key | - |
+| `OPENAI_MODEL` | Model name | `gpt-5.2` |
+| `ANTHROPIC_API_KEY` | Anthropic API key | - |
+| `ANTHROPIC_MODEL` | Model name | `claude-opus-4-5-20251101` |
 
 ## Dataset Access
 
