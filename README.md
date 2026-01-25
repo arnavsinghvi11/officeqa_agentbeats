@@ -4,8 +4,8 @@
 **OfficeQA** is a grounded reasoning benchmark that tests AI systems on complex questions requiring extraction and computation from real-world financial documents (U.S. Treasury Bulletins from 1939-2025).
 
 This submission implements the OfficeQA benchmark on the AgentBeats platform, providing:
-- A **Green Agent (Evaluator)** that orchestrates evaluations
-- A **Baseline Purple Agent** for demonstration
+- A **Green Agent (Evaluator)** in `judge/` that orchestrates evaluations
+- A **Baseline Purple Agent** in `participant/` for demonstration
 - Automated scoring using fuzzy matching with configurable tolerance
 
 ## Benchmark Details
@@ -46,12 +46,7 @@ cp sample.env .env
 uv sync --extra judge --extra participant
 ```
 
-3. Run the evaluation:
-```bash
-uv run agentbeats-run scenario.toml
-```
-
-Or manually start each agent:
+3. Start each agent in separate terminals:
 ```bash
 # Terminal 1: Start the judge (green agent)
 uv run python judge/src/server.py --host 127.0.0.1 --port 9009

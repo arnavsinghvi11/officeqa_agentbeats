@@ -398,11 +398,16 @@ class OfficeQAAgent:
         reasoning_trace = extract_reasoning(response)
         is_correct, rationale = score_answer(q["answer"], response, tolerance)
 
+        try:
+            predicted_answer = extract_final_answer(response)
+        except ValueError:
+            predicted_answer = response if response else ""
+
         return QuestionResult(
             uid=q["uid"],
             question=q["question"],
             ground_truth=q["answer"],
-            predicted=response if response else "",
+            predicted=predicted_answer,
             is_correct=is_correct,
             rationale=rationale,
             difficulty=q["difficulty"],

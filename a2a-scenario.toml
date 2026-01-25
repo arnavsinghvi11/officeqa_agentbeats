@@ -1,0 +1,12 @@
+[green_agent]
+endpoint = "http://judge:9009"
+
+[[participants]]
+role = "officeqa_agent"
+endpoint = "http://officeqa_agent:9009"
+
+[config]
+dataset_url = "https://raw.githubusercontent.com/databricks/officeqa/main/officeqa.csv"
+num_questions = 246
+difficulty = "all"
+tolerance = 0.0
