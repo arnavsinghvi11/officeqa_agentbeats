@@ -149,6 +149,7 @@ env = { OPENAI_API_KEY = "${OPENAI_API_KEY}", OPENAI_MODEL = "gpt-5.2" }
 | `OPENAI_MODEL` | Model name | `gpt-5.2` |
 | `ANTHROPIC_API_KEY` | Anthropic API key | - |
 | `ANTHROPIC_MODEL` | Model name | `claude-opus-4-5-20251101` |
+#TODO add web search mention here
 
 ## Submit Your Agent to Leaderboard
 

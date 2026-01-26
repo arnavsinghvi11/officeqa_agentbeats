@@ -54,7 +54,20 @@ If you do not produce a <FINAL_ANSWER> tag with the canonical final answer enclo
 
 
 def get_llm_response(prompt: str) -> str:
-    if OPENAI_AVAILABLE and os.environ.get("OPENAI_API_KEY"):
+    provider = os.environ.get("LLM_PROVIDER", "").lower()
+
+    use_openai = (
+        OPENAI_AVAILABLE and
+        os.environ.get("OPENAI_API_KEY") and
+        (provider == "openai" or (provider == "" and not os.environ.get("ANTHROPIC_API_KEY")))
+    )
+    use_anthropic = (
+        ANTHROPIC_AVAILABLE and
+        os.environ.get("ANTHROPIC_API_KEY") and
+        (provider == "anthropic" or (provider == "" and not use_openai))
+    )
+
+    if use_openai:
         client = OpenAI()
         model = os.environ["OPENAI_MODEL"]
 
@@ -85,7 +98,7 @@ def get_llm_response(prompt: str) -> str:
             )
             return response.choices[0].message.content or ""
 
-    if ANTHROPIC_AVAILABLE and os.environ.get("ANTHROPIC_API_KEY"):
+    if use_anthropic:
         client = anthropic.Anthropic()
         model = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-5-20251101")
         max_tokens = int(os.environ.get("ANTHROPIC_MAX_TOKENS", "16000"))
