@@ -32,6 +32,11 @@ This submission implements the OfficeQA benchmark on the AgentBeats platform, pr
 - [uv](https://github.com/astral-sh/uv) package manager
 - Docker (for containerized deployment)
 
+### Resource Requirements
+- RAM: ~2GB minimum
+- CPU: 1+ cores
+- Network: Required for LLM API calls
+
 ### Local Development
 
 1. Clone and setup:
@@ -55,24 +60,148 @@ uv run python judge/src/server.py --host 127.0.0.1 --port 9009
 uv run python participant/src/server.py --host 127.0.0.1 --port 9019
 ```
 
-### Docker (Recommended)
+## Configuration
 
+There are two configuration files with different purposes:
+
+### `a2a-scenario.toml` - Local Docker Evaluation
+
+Used when running `docker compose up` locally. This file is mounted into the agentbeats-client container.
+
+| Parameter | Description | Values |
+|-----------|-------------|--------|
+| `num_questions` | Number of questions to evaluate | 1-246 |
+| `difficulty` | Question difficulty filter | `"easy"`, `"hard"`, `"all"` |
+| `tolerance` | Numerical matching tolerance | 0.0 (exact) to 1.0 (loose) |
+
+### `scenario.toml` - Leaderboard / GitHub Actions
+
+Used by the GitHub Actions workflow and `generate_compose.py` for leaderboard submissions. Contains Docker image references and agentbeats IDs.
+
+```toml
+[green_agent]
+agentbeats_id = ""
+image = "ghcr.io/arnavsinghvi11/officeqa-judge:latest"
+
+[[participants]]
+agentbeats_id = ""
+name = "officeqa_agent"
+image = "ghcr.io/arnavsinghvi11/officeqa-agent:latest"
+env = { OPENAI_API_KEY = "${OPENAI_API_KEY}" }
+
+[config]
+num_questions = 246
+difficulty = "all"
+tolerance = 0.0
+```
+
+### `.env` - Agent Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `LLM_PROVIDER` | LLM provider to use | `openai` |
+| `OPENAI_API_KEY` | OpenAI API key | - |
+| `OPENAI_MODEL` | OpenAI model name | `gpt-5.2` |
+| `ANTHROPIC_API_KEY` | Anthropic API key | - |
+| `ANTHROPIC_MODEL` | Anthropic model name | `claude-opus-4-5-20251101` |
+| `ENABLE_WEB_SEARCH` | Enable web search for document retrieval | `false` |
+
+### Docker Evaluation (Recommended)
+
+The green agent (judge) orchestrates evaluation by sending questions to a purple agent (participant) and scoring responses.
+
+**Step 1: Clone and navigate to the repository**
 ```bash
-# Clone the repository
 git clone https://github.com/arnavsinghvi11/officeqa_agentbeats.git
 cd officeqa_agentbeats
+```
 
-# Configure environment
-cp sample.env .env
-# Edit .env with your API key (OPENAI_API_KEY or ANTHROPIC_API_KEY)
+**Step 2: Configure your `.env` file**
 
-# Start both agents
-docker compose up
+Create a `.env` file with your desired configuration. See [Baseline Configurations](#baseline-configurations) below for the 4 tested configurations.
 
-# View logs
-docker compose logs -f
+**Step 3: Configure evaluation parameters in `a2a-scenario.toml`**
 
-# Stop agents
+Edit `a2a-scenario.toml` to set the number of questions and difficulty:
+```toml
+[config]
+num_questions = 246    # Use 1-5 for quick tests, 246 for full evaluation
+difficulty = "all"     # "easy", "hard", or "all"
+tolerance = 0.0        # 0.0 = exact match
+```
+
+**Step 4: Run the evaluation**
+```bash
+docker compose up --abort-on-container-exit --exit-code-from agentbeats-client
+```
+
+**Step 5: View results**
+
+Results are saved to `output/results.json`.
+
+**Step 6: Clean up**
+```bash
+docker compose down
+```
+
+### Baseline Configurations
+
+We provide 4 tested baseline configurations. Create your `.env` file with one of the following:
+
+#### GPT-5.2 with Web Search
+```bash
+cat > .env << 'EOF'
+LLM_PROVIDER=openai
+OPENAI_API_KEY=<your-openai-api-key>
+OPENAI_MODEL=gpt-5.2
+ENABLE_WEB_SEARCH=true
+EOF
+```
+
+#### GPT-5.2 without Tools
+```bash
+cat > .env << 'EOF'
+LLM_PROVIDER=openai
+OPENAI_API_KEY=<your-openai-api-key>
+OPENAI_MODEL=gpt-5.2
+ENABLE_WEB_SEARCH=false
+EOF
+```
+
+#### Claude Opus 4.5 with Web Search
+```bash
+cat > .env << 'EOF'
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=<your-anthropic-api-key>
+ANTHROPIC_MODEL=claude-opus-4-5-20251101
+ENABLE_WEB_SEARCH=true
+EOF
+```
+
+#### Claude Opus 4.5 without Tools
+```bash
+cat > .env << 'EOF'
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=<your-anthropic-api-key>
+ANTHROPIC_MODEL=claude-opus-4-5-20251101
+ENABLE_WEB_SEARCH=false
+EOF
+```
+
+### Quick Test Run
+
+To run a quick test with 1 question before full evaluation:
+```bash
+# Set num_questions to 1 for quick test
+sed -i 's/num_questions = 246/num_questions = 1/' a2a-scenario.toml
+
+# Run evaluation
+docker compose up --abort-on-container-exit --exit-code-from agentbeats-client
+
+# Reset to full evaluation
+sed -i 's/num_questions = 1/num_questions = 246/' a2a-scenario.toml
+
+# Clean up
 docker compose down
 ```
 
@@ -125,31 +254,6 @@ docker build -f Dockerfile.officeqa-agent -t ghcr.io/arnavsinghvi11/officeqa-age
 - **Text answers**: Case-insensitive exact match
 - **Hybrid answers**: Both text and number components must match
 
-## Configuration
-
-Edit `scenario.toml` to customize benchmark and agent settings:
-
-```toml
-[config]
-num_questions = 246      # Number of questions to evaluate
-difficulty = "all"       # "easy", "hard", or "all"
-tolerance = 0.0          # Numerical tolerance (0.0 = exact, 0.05 = 5%)
-
-[[participants]]
-name = "officeqa_agent"
-image = "ghcr.io/arnavsinghvi11/officeqa-agent:latest"
-env = { OPENAI_API_KEY = "${OPENAI_API_KEY}", OPENAI_MODEL = "gpt-5.2" }
-```
-
-### Supported Agent Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `OPENAI_API_KEY` | OpenAI API key | - |
-| `OPENAI_MODEL` | Model name | `gpt-5.2` |
-| `ANTHROPIC_API_KEY` | Anthropic API key | - |
-| `ANTHROPIC_MODEL` | Model name | `claude-opus-4-5-20251101` |
-#TODO add web search mention here
 
 ## Submit Your Agent to Leaderboard
 
@@ -158,8 +262,9 @@ To submit your agent for evaluation on the official leaderboard:
 1. Fork the [OfficeQA Leaderboard](https://github.com/arnavsinghvi11/officeqa-leaderboard)
 2. Edit `scenario.toml`:
    - Set your agent's `agentbeats_id` under `[[participants]]`
+   - Configure your agent's Docker image and environment variables
    - Add API keys to your fork's GitHub Secrets
-3. Push changes to trigger the assessment
+3. Push changes to trigger the GitHub Actions workflow
 4. Submit a PR with your results
 
 ### Agent Requirements
