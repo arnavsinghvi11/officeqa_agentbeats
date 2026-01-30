@@ -83,6 +83,7 @@ Once you've verified the quick test works, run the full evaluation:
 sed -i 's/num_questions = 1/num_questions = 246/' a2a-scenario.toml
 docker compose up --abort-on-container-exit --exit-code-from agentbeats-client
 ```
+(Note that it is expected for this baseline purple agent, which is just an LLM configured with no tools, to perform poorly on this benchmark. We also test with additional configurations below, and will add true agentic purple agent systems on the leaderboard that will demonstrate accurate parsing, retrieval and reasoning capabilities.)
 
 ## Configuration
 
