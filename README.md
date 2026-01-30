@@ -35,7 +35,7 @@ git clone https://github.com/arnavsinghvi11/officeqa_agentbeats.git
 cd officeqa_agentbeats
 ```
 
-### Step 2: Create your `.env` file
+### Step 2: Create your `.env` file  - (sample with gpt-5.2)
 ```bash
 echo "LLM_PROVIDER=openai" > .env
 echo "OPENAI_API_KEY=<your-openai-api-key>" >> .env
@@ -259,10 +259,12 @@ cp sample.env .env
 
 2. Install dependencies:
 ```bash
-uv sync --extra judge --extra participant
+uv sync --extra judge --extra participant --extra dev
 ```
 
-3. Start each agent in separate terminals:
+3. Run green agent scoring tests: `uv run pytest judge/tests/ -v`
+
+4. Start each agent in separate terminals:
 ```bash
 uv run python judge/src/server.py --host 127.0.0.1 --port 9009
 
