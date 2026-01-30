@@ -27,73 +27,64 @@ This submission implements the OfficeQA benchmark on the AgentBeats platform, pr
 
 ## Quick Start
 
-### Prerequisites
-- Python 3.11+
-- [uv](https://github.com/astral-sh/uv) package manager
-- Docker (for containerized deployment)
+Run the full evaluation in 4 steps:
 
-### Resource Requirements
-- RAM: ~2GB minimum
-- CPU: 1+ cores
-- Network: Required for LLM API calls
-
-### Local Development
-
-1. Clone and setup:
+### Step 1: Clone the repository
 ```bash
 git clone https://github.com/arnavsinghvi11/officeqa_agentbeats.git
 cd officeqa_agentbeats
-cp sample.env .env
 ```
 
-2. Install dependencies:
+### Step 2: Create your `.env` file
 ```bash
-uv sync --extra judge --extra participant
+echo "LLM_PROVIDER=openai" > .env
+echo "OPENAI_API_KEY=<your-openai-api-key>" >> .env
+echo "OPENAI_MODEL=gpt-5.2" >> .env
+echo "ENABLE_WEB_SEARCH=true" >> .env
 ```
 
-3. Start each agent in separate terminals:
+### Step 3: Prepare the output directory
 ```bash
-# Terminal 1: Start the judge (green agent)
-uv run python judge/src/server.py --host 127.0.0.1 --port 9009
+mkdir -p output && chmod 777 output
+```
 
-# Terminal 2: Start the participant (purple agent)
-uv run python participant/src/server.py --host 127.0.0.1 --port 9019
+### Step 4: Run the evaluation
+```bash
+docker compose up --abort-on-container-exit --exit-code-from agentbeats-client
+```
+
+Results are saved to `output/results.json`:
+```bash
+cat output/results.json
+```
+
+Clean up when done:
+```bash
+docker compose down
+```
+
+### Quick Test (1 Question)
+
+To verify everything works before running the full 246-question evaluation:
+
+```bash
+sed -i 's/num_questions = 246/num_questions = 1/' a2a-scenario.toml
+docker compose up --abort-on-container-exit --exit-code-from agentbeats-client
+cat output/results.json
+docker compose down
+sed -i 's/num_questions = 1/num_questions = 246/' a2a-scenario.toml
+```
+
+### Full Evaluation (246 Questions)
+
+Once you've verified the quick test works, run the full evaluation:
+
+```bash
+sed -i 's/num_questions = 1/num_questions = 246/' a2a-scenario.toml
+docker compose up --abort-on-container-exit --exit-code-from agentbeats-client
 ```
 
 ## Configuration
-
-There are two configuration files with different purposes:
-
-### `a2a-scenario.toml` - Local Docker Evaluation
-
-Used when running `docker compose up` locally. This file is mounted into the agentbeats-client container.
-
-| Parameter | Description | Values |
-|-----------|-------------|--------|
-| `num_questions` | Number of questions to evaluate | 1-246 |
-| `difficulty` | Question difficulty filter | `"easy"`, `"hard"`, `"all"` |
-| `tolerance` | Numerical matching tolerance | 0.0 (exact) to 1.0 (loose) |
-
-### `scenario.toml` - Leaderboard / GitHub Actions
-
-Used by the GitHub Actions workflow and `generate_compose.py` for leaderboard submissions. Contains Docker image references and agentbeats IDs.
-
-```toml
-[green_agent]
-agentbeats_id = ""
-image = "ghcr.io/arnavsinghvi11/officeqa-judge:latest"
-
-[[participants]]
-agentbeats_id = ""
-name = "officeqa_agent"
-image = "ghcr.io/arnavsinghvi11/officeqa-agent:latest"
-env = { OPENAI_API_KEY = "${OPENAI_API_KEY}" }
-
-[config]
-num_questions = 246
-difficulty = "all"
-tolerance = 0.0
-```
 
 ### `.env` - Agent Environment Variables
 
@@ -106,47 +97,9 @@ tolerance = 0.0
 | `ANTHROPIC_MODEL` | Anthropic model name | `claude-opus-4-5-20251101` |
 | `ENABLE_WEB_SEARCH` | Enable web search for document retrieval | `false` |
 
-### Docker Evaluation (Recommended)
-
-The green agent (judge) orchestrates evaluation by sending questions to a purple agent (participant) and scoring responses.
-
-**Step 1: Clone and navigate to the repository**
-```bash
-git clone https://github.com/arnavsinghvi11/officeqa_agentbeats.git
-cd officeqa_agentbeats
-```
-
-**Step 2: Configure your `.env` file**
-
-Create a `.env` file with your desired configuration. See [Baseline Configurations](#baseline-configurations) below for the 4 tested configurations.
-
-**Step 3: Configure evaluation parameters in `a2a-scenario.toml`**
-
-Edit `a2a-scenario.toml` to set the number of questions and difficulty:
-```toml
-[config]
-num_questions = 246    # Use 1-5 for quick tests, 246 for full evaluation
-difficulty = "all"     # "easy", "hard", or "all"
-tolerance = 0.0        # 0.0 = exact match
-```
-
-**Step 4: Run the evaluation**
-```bash
-docker compose up --abort-on-container-exit --exit-code-from agentbeats-client
-```
-
-**Step 5: View results**
-
-Results are saved to `output/results.json`.
-
-**Step 6: Clean up**
-```bash
-docker compose down
-```
-
 ### Baseline Configurations
 
-We provide 4 tested baseline configurations. Create your `.env` file with one of the following:
+We provide 4 tested baseline configurations:
 
 #### GPT-5.2 with Web Search
 ```bash
@@ -188,28 +141,33 @@ ENABLE_WEB_SEARCH=false
 EOF
 ```
 
-### Quick Test Run
+### `a2a-scenario.toml` - Evaluation Parameters
 
-To run a quick test with 1 question before full evaluation:
-```bash
-# Set num_questions to 1 for quick test
-sed -i 's/num_questions = 246/num_questions = 1/' a2a-scenario.toml
+| Parameter | Description | Values |
+|-----------|-------------|--------|
+| `num_questions` | Number of questions to evaluate | 1-246 |
+| `difficulty` | Question difficulty filter | `"easy"`, `"hard"`, `"all"` |
+| `tolerance` | Numerical matching tolerance | 0.0 (exact) to 1.0 (loose) |
 
-# Run evaluation
-docker compose up --abort-on-container-exit --exit-code-from agentbeats-client
+### `scenario.toml` - Leaderboard / GitHub Actions
 
-# Reset to full evaluation
-sed -i 's/num_questions = 1/num_questions = 246/' a2a-scenario.toml
+Used by the GitHub Actions workflow and `generate_compose.py` for leaderboard submissions:
 
-# Clean up
-docker compose down
-```
+```toml
+[green_agent]
+agentbeats_id = ""
+image = "ghcr.io/arnavsinghvi11/officeqa-judge:latest"
 
-### Building Images Locally
+[[participants]]
+agentbeats_id = ""
+name = "officeqa_agent"
+image = "ghcr.io/arnavsinghvi11/officeqa-agent:latest"
+env = { OPENAI_API_KEY = "${OPENAI_API_KEY}" }
 
-```bash
-docker build -f Dockerfile.officeqa-judge -t ghcr.io/arnavsinghvi11/officeqa-judge:latest .
-docker build -f Dockerfile.officeqa-agent -t ghcr.io/arnavsinghvi11/officeqa-agent:latest .
+[config]
+num_questions = 246
+difficulty = "all"
+tolerance = 0.0
 ```
 
 ## Architecture
@@ -280,6 +238,47 @@ The [OfficeQA Dataset](https://github.com/databricks/officeqa) is publicly avail
 - **Questions**: https://github.com/databricks/officeqa/blob/main/officeqa.csv
 - **Source Documents**: https://github.com/databricks/officeqa/tree/main/treasury_bulletins_parsed
 - **Original PDFs**: https://github.com/databricks/officeqa/tree/main/treasury_bulletin_pdfs
+
+## Local Development
+
+For development and debugging without Docker:
+
+### Prerequisites
+- Python 3.11+
+- [uv](https://github.com/astral-sh/uv) package manager
+
+### Setup
+
+1. Clone and configure:
+```bash
+git clone https://github.com/arnavsinghvi11/officeqa_agentbeats.git
+cd officeqa_agentbeats
+cp sample.env .env
+```
+
+2. Install dependencies:
+```bash
+uv sync --extra judge --extra participant
+```
+
+3. Start each agent in separate terminals:
+```bash
+uv run python judge/src/server.py --host 127.0.0.1 --port 9009
+
+uv run python participant/src/server.py --host 127.0.0.1 --port 9019
+```
+
+### Building Images Locally
+
+```bash
+docker build -f Dockerfile.officeqa-judge -t ghcr.io/arnavsinghvi11/officeqa-judge:latest .
+docker build -f Dockerfile.officeqa-agent -t ghcr.io/arnavsinghvi11/officeqa-agent:latest .
+```
+
+## Resource Requirements
+- RAM: ~2GB minimum
+- CPU: 1+ cores
+- Network: Required for LLM API calls
 
 ## License
 
